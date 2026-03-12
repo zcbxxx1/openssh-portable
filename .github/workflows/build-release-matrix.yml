@@ -75,16 +75,17 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool pkg-config xz-utils curl ca-certificates python3
+          sudo apt-get install -y autoconf automake libtool pkg-config xz-utils curl ca-certificates gh
 
       - name: Install llvm-mingw toolchain
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          URL="$(python3 -c 'import json,os,re,urllib.request; req=urllib.request.Request("https://api.github.com/repos/mstorsjo/llvm-mingw/releases/latest", headers={"Authorization":"Bearer "+os.environ.get("GH_TOKEN", ""), "Accept":"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28", "User-Agent":"openssh-portable-actions"}); data=json.load(urllib.request.urlopen(req)); assets=data.get("assets", []); pats=[r"ucrt-ubuntu-24\\.04-x86_64\\.tar\\.xz$", r"ucrt-ubuntu-22\\.04-x86_64\\.tar\\.xz$", r"ucrt-ubuntu-20\\.04-x86_64\\.tar\\.xz$", r"ucrt-ubuntu-.*-x86_64\\.tar\\.xz$"]; url=next((a.get("browser_download_url") for pat in pats for a in assets if re.search(pat, a.get("name", ""))), ""); print(url)')"
-          test -n "$URL" && test "$URL" != "null"
-          curl -fL "$URL" -o llvm-mingw.tar.xz
+          gh release download \
+            --repo mstorsjo/llvm-mingw \
+            --pattern 'llvm-mingw-*-ucrt-ubuntu-*-x86_64.tar.xz' \
+            --output llvm-mingw.tar.xz
           tar -xf llvm-mingw.tar.xz
           TOOLCHAIN_DIR="$(find "$PWD" -maxdepth 1 -type d -name "llvm-mingw-*-ucrt-ubuntu-*-x86_64" | head -n1)"
           test -n "$TOOLCHAIN_DIR"
