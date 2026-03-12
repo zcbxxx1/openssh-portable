@@ -25,6 +25,8 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    env:
+      STAGE_DIR: ${{ github.workspace }}/stage/linux-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v4
 
@@ -36,17 +38,17 @@ jobs:
       - name: Configure
         run: |
           autoreconf -fi
-          ./configure --prefix="$PWD/dist/linux-${{ matrix.arch }}"
+          ./configure --prefix=/usr
 
       - name: Build
         run: make -j"$(nproc)"
 
       - name: Install staged files
-        run: make install-nokeys
+        run: make install-nokeys DESTDIR="$STAGE_DIR"
 
       - name: Package artifact
         run: |
-          tar -C dist -czf "openssh-linux-${{ matrix.arch }}.tar.gz" "linux-${{ matrix.arch }}"
+          tar -C stage -czf "openssh-linux-${{ matrix.arch }}.tar.gz" "linux-${{ matrix.arch }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -65,36 +67,47 @@ jobs:
           - arch: arm64
             target: aarch64-w64-mingw32
     runs-on: ubuntu-latest
+    env:
+      STAGE_DIR: ${{ github.workspace }}/stage/windows-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install cross toolchains
+      - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            autoconf automake libtool pkg-config mingw-w64 \
-            gcc-mingw-w64-x86-64 gcc-mingw-w64-aarch64 \
-            binutils-mingw-w64-x86-64 binutils-mingw-w64-aarch64
+          sudo apt-get install -y autoconf automake libtool pkg-config xz-utils curl ca-certificates
+
+      - name: Install llvm-mingw toolchain
+        run: |
+          URL="https://github.com/mstorsjo/llvm-mingw/releases/latest/download/llvm-mingw-ucrt-ubuntu-20.04-x86_64.tar.xz"
+          curl -fL "$URL" -o llvm-mingw.tar.xz
+          tar -xf llvm-mingw.tar.xz
+          TOOLCHAIN_DIR="$(find "$PWD" -maxdepth 1 -type d -name "llvm-mingw-*-ucrt-ubuntu-20.04-x86_64" | head -n1)"
+          test -n "$TOOLCHAIN_DIR"
+          echo "$TOOLCHAIN_DIR/bin" >> "$GITHUB_PATH"
 
       - name: Configure
         run: |
           autoreconf -fi
-          CC="${{ matrix.target }}-gcc" ./configure \
+          CC="${{ matrix.target }}-clang" \
+          AR="llvm-ar" \
+          RANLIB="llvm-ranlib" \
+          ./configure \
             --host="${{ matrix.target }}" \
             --build="$(./config.guess)" \
             --without-openssl \
             --without-zlib \
-            --prefix="$PWD/dist/windows-${{ matrix.arch }}"
+            --prefix=/usr
 
       - name: Build
         run: make -j"$(nproc)"
 
       - name: Install staged files
-        run: make install-nokeys
+        run: make install-nokeys DESTDIR="$STAGE_DIR"
 
       - name: Package artifact
         run: |
-          tar -C dist -czf "openssh-windows-${{ matrix.arch }}.tar.gz" "windows-${{ matrix.arch }}"
+          tar -C stage -czf "openssh-windows-${{ matrix.arch }}.tar.gz" "windows-${{ matrix.arch }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
