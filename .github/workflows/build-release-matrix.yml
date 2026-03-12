@@ -11,6 +11,8 @@ on:
       - '**.sh'
       - '**/Makefile.in'
       - 'configure.ac'
+      - '.github/configs'
+      - '.github/*.sh'
       - '.github/workflows/build-release-matrix.yml'
 
 jobs:
@@ -56,63 +58,56 @@ jobs:
           name: openssh-linux-${{ matrix.arch }}
           path: openssh-linux-${{ matrix.arch }}.tar.gz
 
-  windows-cross-build:
+  windows-build:
     name: windows-${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: amd64
-            target: x86_64-w64-mingw32
+            runner: windows-2025
           - arch: arm64
-            target: aarch64-w64-mingw32
-    runs-on: ubuntu-latest
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
     env:
       STAGE_DIR: ${{ github.workspace }}/stage/windows-${{ matrix.arch }}
+      CONFIG: cygwin-release
     steps:
+      - name: Set Cygwin git params
+        run: git config --global core.autocrlf input
+
+      - name: Install Cygwin
+        id: cygwin_install
+        uses: cygwin/cygwin-install-action@master
+        env:
+          CYGWIN: winsymlinks:native
+
       - uses: actions/checkout@v4
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool pkg-config xz-utils curl ca-certificates gh
-
-      - name: Install llvm-mingw toolchain
+      - name: Setup CI system
+        shell: bash
+        run: sh ./.github/setup_ci.sh "$CONFIG" "${{ matrix.runner }}"
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release download \
-            --repo mstorsjo/llvm-mingw \
-            --pattern 'llvm-mingw-*-ucrt-ubuntu-*-x86_64.tar.xz' \
-            --output llvm-mingw.tar.xz
-          tar -xf llvm-mingw.tar.xz
-          TOOLCHAIN_DIR="$(find "$PWD" -maxdepth 1 -type d -name "llvm-mingw-*-ucrt-ubuntu-*-x86_64" | head -n1)"
-          test -n "$TOOLCHAIN_DIR"
-          echo "$TOOLCHAIN_DIR/bin" >> "$GITHUB_PATH"
+          CYGWIN_SETUP: ${{ steps.cygwin_install.outputs.setup }}
+
+      - name: Autoreconf
+        shell: bash
+        run: sh -c autoreconf
 
       - name: Configure
-        run: |
-          autoreconf -fi
-          ac_cv_type_socklen_t=no \
-          curl_cv_socklen_t_equiv=int \
-          CC="${{ matrix.target }}-clang" \
-          AR="llvm-ar" \
-          RANLIB="llvm-ranlib" \
-          ./configure \
-            --host="${{ matrix.target }}" \
-            --build="$(./config.guess)" \
-            --without-openssl \
-            --without-zlib \
-            --prefix=/usr
+        shell: bash
+        run: sh ./.github/configure.sh "$CONFIG"
 
       - name: Build
-        run: make -j"$(nproc)"
+        shell: bash
+        run: make -j4
 
       - name: Install staged files
+        shell: bash
         run: make install-nokeys DESTDIR="$STAGE_DIR"
 
       - name: Package artifact
+        shell: bash
         run: |
           tar -C stage -czf "openssh-windows-${{ matrix.arch }}.tar.gz" "windows-${{ matrix.arch }}"
 
