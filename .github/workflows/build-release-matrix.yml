@@ -70,7 +70,7 @@ jobs:
             runner: windows-11-arm
     runs-on: ${{ matrix.runner }}
     env:
-      STAGE_DIR: ${{ github.workspace }}/stage/windows-${{ matrix.arch }}
+      STAGE_DIR: stage/windows-${{ matrix.arch }}
       CONFIG: cygwin-release
     steps:
       - name: Set Cygwin git params
@@ -104,11 +104,14 @@ jobs:
 
       - name: Install staged files
         shell: bash
-        run: make install-nokeys DESTDIR="$STAGE_DIR"
+        run: |
+          mkdir -p "$STAGE_DIR"
+          make install-nokeys DESTDIR="$STAGE_DIR"
 
       - name: Package artifact
         shell: bash
         run: |
+          test -d "$STAGE_DIR"
           tar -C stage -czf "openssh-windows-${{ matrix.arch }}.tar.gz" "windows-${{ matrix.arch }}"
 
       - name: Upload artifact
