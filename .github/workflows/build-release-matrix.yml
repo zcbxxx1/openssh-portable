@@ -75,11 +75,22 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool pkg-config xz-utils curl ca-certificates
+          sudo apt-get install -y autoconf automake libtool pkg-config xz-utils curl ca-certificates jq
 
       - name: Install llvm-mingw toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          URL="https://github.com/mstorsjo/llvm-mingw/releases/latest/download/llvm-mingw-ucrt-ubuntu-20.04-x86_64.tar.xz"
+          set -euo pipefail
+          API_URL="https://api.github.com/repos/mstorsjo/llvm-mingw/releases/latest"
+          URL="$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$API_URL" \
+            | jq -r '.assets[] | select(.name | test("ucrt-ubuntu-20\\.04-x86_64\\.tar\\.xz$")) | .browser_download_url' \
+            | head -n1)"
+          test -n "$URL" && test "$URL" != "null"
           curl -fL "$URL" -o llvm-mingw.tar.xz
           tar -xf llvm-mingw.tar.xz
           TOOLCHAIN_DIR="$(find "$PWD" -maxdepth 1 -type d -name "llvm-mingw-*-ucrt-ubuntu-20.04-x86_64" | head -n1)"
