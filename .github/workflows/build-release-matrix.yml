@@ -1,0 +1,103 @@
+name: Build OpenSSH multi-platform artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    paths:
+      - '**.c'
+      - '**.h'
+      - '**.m4'
+      - '**.sh'
+      - '**/Makefile.in'
+      - 'configure.ac'
+      - '.github/workflows/build-release-matrix.yml'
+
+jobs:
+  linux-build:
+    name: linux-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool pkg-config libssl-dev zlib1g-dev
+
+      - name: Configure
+        run: |
+          autoreconf -fi
+          ./configure --prefix="$PWD/dist/linux-${{ matrix.arch }}"
+
+      - name: Build
+        run: make -j"$(nproc)"
+
+      - name: Install staged files
+        run: make install-nokeys
+
+      - name: Package artifact
+        run: |
+          tar -C dist -czf "openssh-linux-${{ matrix.arch }}.tar.gz" "linux-${{ matrix.arch }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssh-linux-${{ matrix.arch }}
+          path: openssh-linux-${{ matrix.arch }}.tar.gz
+
+  windows-cross-build:
+    name: windows-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            target: x86_64-w64-mingw32
+          - arch: arm64
+            target: aarch64-w64-mingw32
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf automake libtool pkg-config mingw-w64 \
+            gcc-mingw-w64-x86-64 gcc-mingw-w64-aarch64 \
+            binutils-mingw-w64-x86-64 binutils-mingw-w64-aarch64
+
+      - name: Configure
+        run: |
+          autoreconf -fi
+          CC="${{ matrix.target }}-gcc" ./configure \
+            --host="${{ matrix.target }}" \
+            --build="$(./config.guess)" \
+            --without-openssl \
+            --without-zlib \
+            --prefix="$PWD/dist/windows-${{ matrix.arch }}"
+
+      - name: Build
+        run: make -j"$(nproc)"
+
+      - name: Install staged files
+        run: make install-nokeys
+
+      - name: Package artifact
+        run: |
+          tar -C dist -czf "openssh-windows-${{ matrix.arch }}.tar.gz" "windows-${{ matrix.arch }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssh-windows-${{ matrix.arch }}
+          path: openssh-windows-${{ matrix.arch }}.tar.gz
