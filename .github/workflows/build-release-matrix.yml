@@ -94,6 +94,8 @@ jobs:
       - name: Configure
         run: |
           autoreconf -fi
+          ac_cv_type_socklen_t=no \
+          curl_cv_socklen_t_equiv=int \
           CC="${{ matrix.target }}-clang" \
           AR="llvm-ar" \
           RANLIB="llvm-ranlib" \
